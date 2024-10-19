@@ -2,8 +2,12 @@ import logging
 import os
 import typing
 
+from dotenv import load_dotenv
 from flask import Flask
 from flask import request
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 def run_server(handlers: typing.Dict):
@@ -37,10 +41,12 @@ def run_server(handlers: typing.Dict):
         )
         return response
 
-    host = "0.0.0.0"
+    host = "localhost"
     port = int(os.environ.get("PORT", "80"))
 
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
+    debug = os.environ.get("FLASK_ENV", "PROD") == "DEV"
+    app.run(host=host, port=port, debug=debug)
+
     print(f"\nRunning Battlesnake at http://{host}:{port}")
-    app.run(host=host, port=port)
