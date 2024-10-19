@@ -41,7 +41,7 @@ def run_server(handlers: typing.Dict):
         )
         return response
 
-    host = "localhost"
+    host = "0.0.0.0"
     port = int(os.environ.get("PORT", "80"))
 
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
