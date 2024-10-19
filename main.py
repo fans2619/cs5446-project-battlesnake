@@ -62,15 +62,48 @@ def move(game_state: typing.Dict) -> typing.Dict:
     elif my_neck["y"] > my_head["y"]:  # Neck is above head, don't move up
         is_move_safe["up"] = False
 
-    # TODO: Step 1 - Prevent your Battlesnake from moving out of bounds
-    # board_width = game_state['board']['width']
-    # board_height = game_state['board']['height']
+    # Step 1 - Prevent your Battlesnake from moving out of bounds
+    board_width = game_state['board']['width']
+    board_height = game_state['board']['height']
 
-    # TODO: Step 2 - Prevent your Battlesnake from colliding with itself
-    # my_body = game_state['you']['body']
+    if my_head["x"] == 0:
+        is_move_safe["left"] = False
 
-    # TODO: Step 3 - Prevent your Battlesnake from colliding with other Battlesnakes
-    # opponents = game_state['board']['snakes']
+    if my_head["x"] == board_width - 1:
+        is_move_safe["right"] = False
+
+    if my_head["y"] == 0:
+        is_move_safe["down"] = False
+
+    if my_head["y"] == board_height - 1:
+        is_move_safe["up"] = False
+
+    # Step 2 - Prevent your Battlesnake from colliding with itself
+    my_body = game_state['you']['body']
+    for segment in my_body[1:]:  # Skip the head
+        # Check potential next positions against each body segment
+        if {"x": my_head["x"], "y": my_head["y"] + 1} == segment:
+            is_move_safe["up"] = False
+        if {"x": my_head["x"], "y": my_head["y"] - 1} == segment:
+            is_move_safe["down"] = False
+        if {"x": my_head["x"] - 1, "y": my_head["y"]} == segment:
+            is_move_safe["left"] = False
+        if {"x": my_head["x"] + 1, "y": my_head["y"]} == segment:
+            is_move_safe["right"] = False
+
+    # Step 3 - Prevent your Battlesnake from colliding with other Battlesnakes
+    opponents = game_state['board']['snakes']
+
+    for snake in opponents:
+        for segment in snake['body']:
+            if {"x": my_head["x"], "y": my_head["y"] + 1} == segment:
+                is_move_safe["up"] = False
+            if {"x": my_head["x"], "y": my_head["y"] - 1} == segment:
+                is_move_safe["down"] = False
+            if {"x": my_head["x"] - 1, "y": my_head["y"]} == segment:
+                is_move_safe["left"] = False
+            if {"x": my_head["x"] + 1, "y": my_head["y"]} == segment:
+                is_move_safe["right"] = False
 
     # Are there any safe moves left?
     safe_moves = []
@@ -82,11 +115,34 @@ def move(game_state: typing.Dict) -> typing.Dict:
         print(f"MOVE {game_state['turn']}: No safe moves detected! Moving down")
         return {"move": "down"}
 
-    # Choose a random move from the safe ones
-    next_move = random.choice(safe_moves)
+    # Step 4 - Move towards food instead of random, to regain health and survive longer
+    food = game_state['board']['food']
 
-    # TODO: Step 4 - Move towards food instead of random, to regain health and survive longer
-    # food = game_state['board']['food']
+    # If we have safe moves and there's food, try to move towards closest food
+    if len(safe_moves) > 0 and len(food) > 0:
+        # Find closest food based on Manhattan distance between head and food
+        closest_food = food[0]
+        closest_distance = abs(my_head["x"] - food[0]["x"]) + abs(my_head["y"] - food[0]["y"])
+
+        for f in food:
+            distance = abs(my_head["x"] - f["x"]) + abs(my_head["y"] - f["y"])
+            if distance < closest_distance:
+                closest_food = f
+                closest_distance = distance
+
+        # Try to move towards the food if it's safe
+        if my_head["x"] < closest_food["x"] and "right" in safe_moves:
+            next_move = "right"
+        elif my_head["x"] > closest_food["x"] and "left" in safe_moves:
+            next_move = "left"
+        elif my_head["y"] < closest_food["y"] and "up" in safe_moves:
+            next_move = "up"
+        elif my_head["y"] > closest_food["y"] and "down" in safe_moves:
+            next_move = "down"
+        else:
+            next_move = random.choice(safe_moves)
+    else:
+        next_move = random.choice(safe_moves)
 
     print(f"MOVE {game_state['turn']}: {next_move}")
     return {"move": next_move}
