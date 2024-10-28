@@ -11,13 +11,16 @@
 # For more info see docs.battlesnake.com
 
 import random
-import typing
+from typing import Dict, List, Optional, Union
+
+from astar_pathfinder import BattlesnakePathfinder
+from utils import manhattan_distance
 
 
 # info is called when you create your Battlesnake on play.battlesnake.com
 # and controls your Battlesnake's appearance
 # TIP: If you open your Battlesnake URL in a browser you should see this data
-def info() -> typing.Dict:
+def info() -> Dict:
     print("INFO")
 
     return {
@@ -30,20 +33,19 @@ def info() -> typing.Dict:
 
 
 # start is called when your Battlesnake begins a game
-def start(game_state: typing.Dict):
+def start(game_state: Dict):
     print("GAME START")
 
 
 # end is called when your Battlesnake finishes a game
-def end(game_state: typing.Dict):
+def end(game_state: Dict):
     print("GAME OVER\n")
 
 
 # move is called on every turn and returns your next move
 # Valid moves are "up", "down", "left", or "right"
 # See https://docs.battlesnake.com/api/example-move for available data
-def move(game_state: typing.Dict) -> typing.Dict:
-
+def move(game_state: Dict) -> Dict:
     is_move_safe = {"up": True, "down": True, "left": True, "right": True}
 
     # We've included code to prevent your Battlesnake from moving backwards
@@ -116,36 +118,56 @@ def move(game_state: typing.Dict) -> typing.Dict:
         return {"move": "down"}
 
     # Step 4 - Move towards food instead of random, to regain health and survive longer
-    food = game_state['board']['food']
+    next_move = None
 
     # If we have safe moves and there's food, try to move towards closest food
+    food = game_state['board']['food']
     if len(safe_moves) > 0 and len(food) > 0:
-        # Find closest food based on Manhattan distance between head and food
-        closest_food = food[0]
-        closest_distance = abs(my_head["x"] - food[0]["x"]) + abs(my_head["y"] - food[0]["y"])
+        # Find closest food
+        target_food = get_closest_food(my_head, food)
 
-        for f in food:
-            distance = abs(my_head["x"] - f["x"]) + abs(my_head["y"] - f["y"])
-            if distance < closest_distance:
-                closest_food = f
-                closest_distance = distance
+        next_move = get_naive_move(my_head, target_food, safe_moves)
 
-        # Try to move towards the food if it's safe
-        if my_head["x"] < closest_food["x"] and "right" in safe_moves:
-            next_move = "right"
-        elif my_head["x"] > closest_food["x"] and "left" in safe_moves:
-            next_move = "left"
-        elif my_head["y"] < closest_food["y"] and "up" in safe_moves:
-            next_move = "up"
-        elif my_head["y"] > closest_food["y"] and "down" in safe_moves:
-            next_move = "down"
-        else:
-            next_move = random.choice(safe_moves)
-    else:
+        pathfinder = BattlesnakePathfinder(game_state)
+        path = pathfinder.find_path(my_head, target_food)
+        if path and len(path) > 0:
+            next_move = path[0]
+
+    if not next_move:
         next_move = random.choice(safe_moves)
 
     print(f"MOVE {game_state['turn']}: {next_move}")
     return {"move": next_move}
+
+
+def get_closest_food(head: Dict, food_list: List[Dict]) -> Optional[Dict]:
+    """Find the closest food item using Manhattan distance."""
+    if not food_list:
+        return None
+
+    closest_food = min(
+        food_list,
+        key=lambda food: manhattan_distance((head['x'], head['y']), (food['x'], food['y']))
+    )
+    return closest_food
+
+
+def get_naive_move(start_pos: Dict, goal_pos: Dict, safe_moves: List[str]) -> Union[str, None]:
+    if not safe_moves:
+        return None
+
+    # Try to move towards the goal if it's safe
+    if start_pos["x"] < goal_pos["x"] and "right" in safe_moves:
+        next_move = "right"
+    elif start_pos["x"] > goal_pos["x"] and "left" in safe_moves:
+        next_move = "left"
+    elif start_pos["y"] < goal_pos["y"] and "up" in safe_moves:
+        next_move = "up"
+    elif start_pos["y"] > goal_pos["y"] and "down" in safe_moves:
+        next_move = "down"
+    else:
+        next_move = random.choice(safe_moves)
+    return next_move
 
 
 # Start server when `python main.py` is run
