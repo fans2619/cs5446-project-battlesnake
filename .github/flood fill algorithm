@@ -1,0 +1,55 @@
+ # flood fill to prevent trapping in a corner
+    def next_move(head, move):
+        if move == 'up':
+            return (head['x'], head['y'] + 1)
+        elif move == 'down':
+            return (head['x'], head['y'] - 1)
+        elif move == 'left':
+            return (head['x'] - 1, head['y'])
+        elif move == 'right':
+            return (head['x'] + 1, head['y'])
+    #area that is occupied by snakes
+    occupied_area = set()
+    for snake in game_state['board']['snakes']:
+        for seg in snake['body']:
+            occupied_area.add((seg['x'], seg['y']))
+    #get the open area after the move
+    def flood_fill(pos, occupied_area, positions_to_add, positions_to_remove):
+        adjacent = deque([pos])
+        visited = set()
+        while adjacent:
+            curr = adjacent.popleft()
+            x, y = curr[0], curr[1]
+            is_occupied = curr in occupied_area
+            if curr in positions_to_add:
+                is_occupied = True
+            if curr in positions_to_remove:
+                is_occupied = False
+            if not (0 <= x < board_width and 0 <= y < board_height):
+                continue
+            if curr in visited or is_occupied:
+                continue
+            visited.add(curr)
+            if len(visited) >= len(game_state["you"]["body"]):
+                break
+            adjacent.extend([(curr[0], curr[1] + 1), (curr[0], curr[1] - 1), (curr[0] + 1, curr[1]),
+                        (curr[0] - 1, curr[1])])
+        return len(visited)
+
+
+    food_pos = {(food['x'], food['y']) for food in game_state['board']['food']}
+    my_tail = game_state["you"]["body"][-1]
+    tail_pos = (my_tail['x'], my_tail['y'])
+
+    for move in is_move_safe:
+        if is_move_safe[move]:
+            next_pos = next_move(my_head, move)
+            #adjust occupied_area when snake is in next_pos
+            positions_to_add = {next_pos}
+            positions_to_remove = set()
+            if next_pos not in food_pos:
+                positions_to_remove.add(tail_pos)
+            #check if open area is bigger than the length of the snake
+            open_area = flood_fill(next_pos, occupied_area, positions_to_add, positions_to_remove)
+            if open_area < len(my_body):
+                is_move_safe[move] = False
