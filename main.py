@@ -120,6 +120,7 @@ def move(game_state: Dict) -> Dict:
         return {"move": "down"}
 
    #step 4- move to food
+    next_move = None
     food = game_state['board']['food']
     if len(food) > 0:
         # Find closest food
