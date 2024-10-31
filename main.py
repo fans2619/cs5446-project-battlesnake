@@ -52,7 +52,6 @@ def move(game_state: Dict) -> Dict:
 
     # We've included code to prevent your Battlesnake from moving backwards
     my_head = game_state["you"]["body"][0]  # Coordinates of your head
-    print(f"My head: {my_head}")
     my_neck = game_state["you"]["body"][1]  # Coordinates of your "neck"
 
     if my_neck["x"] < my_head["x"]:  # Neck is left of head, don't move left
@@ -118,57 +117,9 @@ def move(game_state: Dict) -> Dict:
             print(f"UnSafe moves after initial checks: {move}")
 
     if len(safe_moves) == 0:
-        print(f"MOVE {game_state['turn']}: No safe moves detected! Moving down")
         return {"move": "down"}
 
-    # Step 4 - Move towards food instead of random, to regain health and survive longer
-    next_move = None
-
-    # If there's food, try to move towards closest food
-    # food = game_state['board']['food']
-    # if len(food) > 0:
-    #     # Find closest food
-    #     target_food = get_closest_food(my_head, food)
-    #     print(f"Target food at: {target_food}")
-    #     pathfinder = BattlesnakePathfinder(game_state)
-    #     path = pathfinder.find_path(my_head, target_food)
-    #     print(f"Path found: {path}")
-    #     if path and len(path) > 0:
-    #         potential_next_move = path[0]
-    #         print(f"Potential next move from path: {potential_next_move}")
-    #         # Simulate the new head position after making the move
-    #         new_head = simulate_move(my_head, potential_next_move)
-    #         print(f"New head position after move: {new_head}")
-    #         # Perform flood fill from the new head position
-    #         accessible_area = flood_fill(new_head, game_state)
-    #         print(f"Accessible area from new head: {accessible_area}")
-    #         # Define a threshold for minimum acceptable area
-    #         min_area_threshold = len(game_state['you']['body']) * 2
-    #         print(f"Minimum area threshold: {min_area_threshold}")
-    #         if accessible_area >= min_area_threshold:
-    #             next_move = potential_next_move
-    #         else:
-    #             # Use naive move as a fallback
-    #             next_move = get_naive_move(my_head, target_food, safe_moves)
-    #             print(f"Naive move selected: {next_move}")
-    #             if not next_move:
-    #                 # If naive move isn't safe or leads to small area, choose alternative
-    #                 next_move = choose_move_with_max_accessible_area(safe_moves, my_head, game_state)
-    #                 print(f"Move with max accessible area selected: {next_move}")
-    #     else:
-    #         # No path found, use naive move or choose alternative
-    #         next_move = get_naive_move(my_head, target_food, safe_moves)
-    #         print("No path found to food. Using naive move or choosing move with max accessible area.")
-    #         if not next_move:
-    #             next_move = choose_move_with_max_accessible_area(safe_moves, my_head, game_state)
-    #
-    # else:
-    #     # No food, move safely
-    #     print("No food available. Choosing move with max accessible area.")
-    #     next_move = choose_move_with_max_accessible_area(safe_moves, my_head, game_state)
-    #
-    # print(f"MOVE {game_state['turn']}: {next_move}")
-    # return {"move": next_move}
+   #step 4- move to food
     food = game_state['board']['food']
     if len(food) > 0:
         # Find closest food
@@ -186,16 +137,13 @@ def move(game_state: Dict) -> Dict:
 
         if path and len(path) > 0:
             potential_next_move = path[0]
-            print(f"Potential next move from path: {potential_next_move}")
 
             # Calculate accessible area for the move suggested by pathfinding
             new_head = simulate_move(my_head, potential_next_move)
             path_accessible_area = flood_fill(new_head, game_state)
-            print(f"Accessible area from pathfinding move: {path_accessible_area}")
 
             # Calculate minimum safe area based on snake length
             min_area_threshold = len(game_state['you']['body']) * 1.25
-            print(f"Minimum area threshold: {min_area_threshold}")
 
             # Check if the pathfinding move leads to sufficient space
             if path_accessible_area >= min_area_threshold:
@@ -204,11 +152,9 @@ def move(game_state: Dict) -> Dict:
 
             # If pathfinding move isn't safe enough, evaluate all safe moves
             if best_move is None:
-                print("Pathfinding move didn't meet area threshold, evaluating all safe moves")
                 for move in safe_moves:
                     new_head = simulate_move(my_head, move)
                     area = flood_fill(new_head, game_state)
-                    print(f"Move {move} leads to area of {area}")
 
                     # Update best move if this move leads to larger accessible area
                     if area > max_accessible_area and area >= min_area_threshold:
@@ -216,29 +162,23 @@ def move(game_state: Dict) -> Dict:
                         best_move = move
         else:
             # No path found, use improved naive move that considers accessible area
-            print("No path found to food, using naive move with area consideration")
             best_move = get_naive_move(my_head, target_food, safe_moves, game_state)
 
         # Final fallback if no move has been selected
         if best_move is None and safe_moves:
-            print("No suitable moves found, selecting move with largest area")
             next_move = choose_move_with_max_accessible_area(safe_moves, my_head, game_state)
         else:
             next_move = best_move
 
     else:
         # No food, move to position with maximum accessible area
-        print("No food available. Choosing move with max accessible area.")
         next_move = choose_move_with_max_accessible_area(safe_moves, my_head, game_state)
 
     # Final safety check
     if next_move is None and safe_moves:
-        print("WARNING: No move selected, falling back to first safe move")
         next_move = safe_moves[0]
     elif next_move is None:
-        print("WARNING: No safe moves available, moving up")
         next_move = "up"
-    print(f"MOVE {game_state['turn']}: {next_move}")
     return {"move": next_move}
 
 def get_closest_food(head: Dict, food_list: List[Dict]) -> Optional[Dict]:
