@@ -116,6 +116,8 @@ class mcTree:
         for nextA in self.root.children.keys():
             if(self.root.children[nextA]==bestC):
                 action=nextA
+        #如果他返回0就是下一步没有可行的action了。。。。。。
+        print(len(self.root.getNextActions()))
         return action
     
     #如果所有children都已经被展开过了，挑reward值最大的那个路径的尽头的node返回，我们接着这个node继续dfs，更新reward
@@ -134,7 +136,7 @@ class mcTree:
             node.reward+=reward
             node= node.parent   
         
-    #选择一个reward比较高的node，v是threshold（lec slides上的公式），大于v的随机返回，如果没有大于v的返回最大的
+    #选择一个reward比较高的node，v是一个threshold，大于v的随机返回，如果没有大于v的返回最大的
     def getBestChild(self,node,exploration=0):
         cons = 1/math.sqrt(2)
         bn = list()
@@ -146,7 +148,7 @@ class mcTree:
                 bn =[n]
             elif(v==b):
                 bn.append(n)
-                
+   
         if(len(bn)==0):
             v=0
             curNode=None
@@ -157,8 +159,9 @@ class mcTree:
             return curNode
         choice = random.choice(bn)
         position = bn.index(choice)  # 获取元素在列表中的索引
-        print(f"选中的元素位于列表的第 {position + 1} 位。一共{len(bn)}个元素可以选")
+        # print(f"选中的元素位于列表的第 {position + 1} 位。一共{len(bn)}个元素可以选")
         return choice
+    
     #对于node，找到第一个没有被dfs探索过的node
     def expand(self,node):
         actions = node.getNextActions()
