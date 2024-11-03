@@ -1,3 +1,4 @@
+import math,random
 class Node:
     def __init__(self,game_state,parent):
         self.state = game_state
@@ -6,9 +7,10 @@ class Node:
         self.visits = 0
         self.reward = 0
         self.fullyExpand = False
+
     def getReward(self):
         if(self.endState()):
-            return self.turn
+            return int(self.state['turn'])
         else:
             return 10000
 
@@ -44,8 +46,7 @@ class Node:
         for q in range(len(nextState['board']['snakes'])):
             if(nextState['board']['snakes'][q]['id']==nextState['you']['id']):
                 nextState['board']['snakes'][q]=deepcopy(nextState['you'])
-                break
-            
+                break  
         return Node(nextState,self)
             
         
@@ -59,15 +60,17 @@ class Node:
             res.remove('up')
         if self.state['you']['head']['y'] == 0:                        
             res.remove('down')
-        left = {'x': self.state['you']['head']['x'] - 1, 'y': self.state['you']['head']['y']}
-        right = {'x':self.state['you']['head']['x'] + 1, 'y': self.state['you']['head']['y']}
+            
+        left = {'x': self.state['you']['head']['x'] -1, 'y': self.state['you']['head']['y']}
+        right = {'x':self.state['you']['head']['x'] +1, 'y': self.state['you']['head']['y']}
         up = {'x': self.state['you']['head']['x'], 'y': self.state['you']['head']['y'] + 1}
         down = {'x': self.state['you']['head']['x'], 'y': self.state['you']['head']['y'] - 1}
+            
         bodyList=list()
         for i in range(len(self.state['board']['snakes'])):
             bodyList.extend(self.state['board']['snakes'][i]['body'])
 
-        if left in bodyList:
+        if (left in bodyList):
             res.remove('left')
         if right in bodyList:
             res.remove('right')
@@ -75,6 +78,7 @@ class Node:
             res.remove('up')
         if down in bodyList:
             res.remove('down')
+ 
         return res
         
 
@@ -87,16 +91,16 @@ class mcTree:
         self.root = Node(start,None)
         timeLimit = time.time() + self.maxTime
         count = 0
-        import random
+        self.maxIter=5
         while(time.time()<timeLimit and count <self.maxIter):
             count+=1
             node = self.select(self.root)
             t = node
-            
-            while(t.endState()==False):
-                t = node.performAction(random.choice(t.getNextActions())) 
+            c = 0
+            while(t.endState()==False and c<10):
+                c+=1
+                t = node.performAction(random.choice(t.getNextActions()))
             reward = t.getReward()
-            
             self.backProp(node,reward)
             
         bestC = self.getBestChild(self.root, 0)
@@ -106,13 +110,12 @@ class mcTree:
         return action
             
     def select(self, node):
-        if(node.endState()):
-            return node
         while(node.endState()==False):
             if(node.fullyExpand):
                 node = self.getBestChild(node)
             else:
                 return self.expand(node)#next node
+        return node
             
     def backProp(self,node,reward):
         while(node):
@@ -121,8 +124,8 @@ class mcTree:
             node= node.parent   
         
              
-    def getBestChild(self,node,exploration):
-        import math,random
+    def getBestChild(self,node,exploration=0):
+        
         cons = 1/math.sqrt(2)
         bn = list()
         b = float("-inf")
@@ -134,7 +137,20 @@ class mcTree:
             elif(v==b):
                 bn.append(n)
                 
-        return random.choice(bn)
+        if(len(bn)==0):
+            v=0
+            curNode=None
+            for n in node.children.values():
+                if(n.reward>v):
+                    v=n.reward
+                    curNode=n
+            return curNode
+        choice = random.choice(bn)
+        position = bn.index(choice)  # 获取元素在列表中的索引
+        print(f"选中的元素位于列表的第 {position + 1} 位。一共{len(bn)}个元素可以选")
+        return choice
+        
+
         
     def expand(self,node):
         actions = node.getNextActions()
@@ -145,6 +161,7 @@ class mcTree:
                     node.fullyExpand = True
                 return node.children[a]
             
+        print("Should never reach here")
                 
         
         

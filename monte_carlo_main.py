@@ -46,7 +46,7 @@ def move(game_state: typing.Dict) -> typing.Dict:
     tre  = mcTree.mcTree(0.001,3)
     
     next_move = tre.search(game_state)
-    print("wwwwww")
+
     return {"move": next_move}
     
 SyntaxError
