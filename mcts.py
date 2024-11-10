@@ -60,7 +60,7 @@ class Node:
     def is_terminal(self) -> bool:
         """Check if current state is terminal (game over)."""
         # Game is over if snake is dead or no valid moves
-        return (len(self.state["board"]["snakes"]) <= 0  # Use 0 when testing with only one snake
+        return (len(self.state["board"]["snakes"]) <= 1  # Use 0 when testing with only one snake!
                 or
                 self.state["you"]["health"] <= 0 or
                 not self._get_valid_actions())
@@ -70,8 +70,11 @@ class Node:
         if self.state["you"]["health"] <= 0:
             return -1000.0  # Heavy penalty for death
 
-        # Basic survival reward
-        reward = float(self.state["you"]["health"]) / 50.0
+        reward = 0.0
+
+        # Penalize for reduced health to encourage the snake to find food
+        # reward = float(self.state["you"]["health"]) / 10.0
+        reward -= (100 - self.state["you"]["health"])
 
         # Reward for length
         reward += len(self.state["you"]["body"]) * 2
@@ -82,13 +85,18 @@ class Node:
 
         # Reward for being close to food when health is low
         if self.state["you"]["health"] < 50:
-            closest_food_dist = self._get_closest_food_distance()
+            closest_food_dist = self.get_closest_food_distance()
             if closest_food_dist is not None:
                 reward += (1000.0 / (closest_food_dist + 1))
 
+        # Small penalization if did not move towards the food next to it
+        if self.parent is not None:
+            if self.parent.get_closest_food_distance() == 1 and self.state["you"]["health"] != 100:
+                reward -= 50.0
+
         return reward
 
-    def _get_closest_food_distance(self) -> Optional[float]:
+    def get_closest_food_distance(self) -> Optional[float]:
         """Calculate Manhattan distance to closest food."""
         if not self.state["board"]["food"]:
             return None
@@ -104,7 +112,7 @@ class MCTS:
     def __init__(self, time_limit: float = 0.1, rollout_limit: int = 50):
         self.time_limit = time_limit
         self.rollout_limit = rollout_limit
-        self.exploration_constant = 1000  # This large exploration constant is due to large reward values
+        self.exploration_constant = 100  # This large exploration constant is due to large reward values
 
     def search(self, initial_state: Dict) -> str:
         root = Node(initial_state)
@@ -209,7 +217,7 @@ class MCTS:
     # Use sum of rewards during rollout instead of the reward from terminal node
     def _rollout(self, node: Node) -> float:
         state = deepcopy(node.state)
-        current_node = Node(state)
+        current_node = Node(state, parent=node)
         depth = 0
         total_reward = 0
         discount_factor = 0.95  # Favor earlier rewards
@@ -218,7 +226,7 @@ class MCTS:
             total_reward += current_node.get_reward() * (discount_factor ** depth)
             action = self._rollout_policy(current_node)
             self._apply_action(state, action)
-            current_node = Node(state)
+            current_node = Node(state, parent=current_node)
             depth += 1
 
         # Add final state reward
@@ -232,10 +240,10 @@ class MCTS:
             return "up"  # Default move if no valid moves
 
         # Prioritize food when health is low
-        if node.state["you"]["health"] < 50:
-            best_action = self._get_food_seeking_action(node, valid_actions)
-            if best_action:
-                return best_action
+        # if node.state["you"]["health"] < 50:
+        best_action = self._get_food_seeking_action(node, valid_actions)
+        if best_action:
+            return best_action
 
         # Otherwise choose random valid action
         return random.choice(valid_actions)
