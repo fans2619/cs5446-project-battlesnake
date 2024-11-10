@@ -22,9 +22,9 @@ def info() -> typing.Dict:
     return {
         "apiversion": "mcts",
         "author": "cs5446-g37",
-        "color": "#FAC3A4",
-        "head": "smart-caterpillar",
-        "tail": "mouse",
+        "color": "#32A852",
+        "head": "rudolph",
+        "tail": "do-sammy",
     }
 
 
@@ -51,4 +51,4 @@ def move(game_state: typing.Dict) -> typing.Dict:
 if __name__ == "__main__":
     from server import run_server
 
-    run_server({"info": info, "start": start, "move": move, "end": end})
+    run_server({"info": info, "start": start, "move": move, "end": end}, custom_port=81)

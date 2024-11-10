@@ -12,11 +12,11 @@
 
 
 import random
+from collections import deque
 from typing import Dict, List, Optional, Union
 
 from astar_pathfinder import BattlesnakePathfinder
 from utils import manhattan_distance
-from collections import deque
 
 
 # info is called when you create your Battlesnake on play.battlesnake.com
@@ -119,7 +119,7 @@ def move(game_state: Dict) -> Dict:
     if len(safe_moves) == 0:
         return {"move": "down"}
 
-   #step 4- move to food
+    # step 4- move to food
     next_move = None
     food = game_state['board']['food']
     if len(food) > 0:
@@ -181,6 +181,7 @@ def move(game_state: Dict) -> Dict:
     elif next_move is None:
         next_move = "up"
     return {"move": next_move}
+
 
 def get_closest_food(head: Dict, food_list: List[Dict]) -> Optional[Dict]:
     """Find the closest food item using Manhattan distance."""
@@ -257,7 +258,6 @@ def get_naive_move(start_pos: Dict, goal_pos: Dict, safe_moves: List[str], game_
     return best_move
 
 
-
 def simulate_move(head, move):
     if move == 'up':
         return {'x': head['x'], 'y': head['y'] + 1}
@@ -267,6 +267,7 @@ def simulate_move(head, move):
         return {'x': head['x'] - 1, 'y': head['y']}
     elif move == 'right':
         return {'x': head['x'] + 1, 'y': head['y']}
+
 
 def get_neighbors(head, board_width, board_height):
     neighbors = []
@@ -317,12 +318,8 @@ def choose_move_with_max_accessible_area(safe_moves, my_head, game_state):
     return best_move if best_move else random.choice(safe_moves)
 
 
-
-
 # Start server when `python main.py` is run
 if __name__ == "__main__":
     from server import run_server
 
-    run_server({"info": info, "start": start, "move": move, "end": end})
-
-
+    run_server({"info": info, "start": start, "move": move, "end": end}, custom_port=80)
