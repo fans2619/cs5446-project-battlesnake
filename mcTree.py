@@ -9,11 +9,35 @@ class Node:
         self.fullyExpand = False#所有action都已经加入children
     #运行时间越长，reward越大，没考虑事物
     #运行时间越长，消耗健康值越高，这个也没考虑
+    # def getReward(self):
+    #     if(self.endState()):
+    #         return int(self.state['turn'])
+    #     else:
+    #         return 10000
+
     def getReward(self):
-        if(self.endState()):
-            return int(self.state['turn'])
-        else:
-            return 10000
+        # Reward function focusing on food consumption, length, and survival
+        reward = 0
+
+        # Check if the game is in an end state (death)
+        if self.endState():
+            return -100  # Strong negative reward for death
+
+        # High reward for eating food, if food was consumed in this action
+        head = self.state['you']['head']
+        if head in self.state['board']['food']:
+            reward += 20  # High reward for consuming food
+            self.state['you']['health'] = 100  # Reset health upon eating food
+
+        # Reward based on the snake's current length
+        snake_length = len(self.state['you']['body'])
+        reward += snake_length * 0.5  # Reward grows with snake length, showing progress over time
+
+        # Small reward for surviving without eating food
+        if head not in self.state['board']['food']:
+            reward += 3  # Small reward for simply surviving without eating food
+
+        return reward
         
     def endState(self):
         if(len(self.getNextActions())==0 or self.state['you']['health']==0):
@@ -43,8 +67,8 @@ class Node:
             nextState['you']['health']=100
         else:
             nextState['you']['health']-=1
-        #去掉尾巴
-        nextState['you']['body'].pop()
+            #去掉尾巴
+            nextState['you']['body'].pop()
         nextState['you']['body'].insert(0,nextState['you']['head'])
         #snakes应该是棋盘上所有蛇的合集，把自己的蛇更新一下
         for q in range(len(nextState['board']['snakes'])):
@@ -72,9 +96,43 @@ class Node:
         down = {'x': self.state['you']['head']['x'], 'y': self.state['you']['head']['y'] - 1}
             
         bodyList=list()
-        for i in range(len(self.state['board']['snakes'])):
-            bodyList.extend(self.state['board']['snakes'][i]['body'])
+        # for i in range(len(self.state['board']['snakes'])):
+        #     bodyList.extend(self.state['board']['snakes'][i]['body'])
+        #
+        for snake in self.state['board']['snakes']:
+            head_x, head_y = snake['head']['x'], snake['head']['y']
 
+        # Calculate the neighborhood around the snake's head
+        head_neighborhood = [
+            {'x': head_x + 1, 'y': head_y},  # right
+            {'x': head_x - 1, 'y': head_y},  # left
+            {'x': head_x, 'y': head_y + 1},  # up
+            {'x': head_x, 'y': head_y - 1}  # down
+        ]
+
+        # Check if any neighboring square has food
+        will_grow = any(pos in self.state['board']['food'] for pos in head_neighborhood)
+
+        if snake['id'] == self.state['you']['id']:
+            # Player's snake: dynamically exclude tail based on growth prediction
+            if will_grow:
+                bodyList.extend(snake['body'])  # Include entire body if growing
+            else:
+                bodyList.extend(snake['body'][:-1])  # Exclude tail if not growing
+        else:
+            # For other snakes: add all body parts and potential next moves
+            if will_grow:
+                bodyList.extend(snake['body'])  # Include entire body if growing
+            else:
+                bodyList.extend(snake['body'][:-1])  # Exclude tail if not growing
+
+            # Add potential next head positions for other snakes
+            for pos in head_neighborhood:
+                # Ensure the position is within board boundaries
+                if 0 <= pos['x'] < self.state['board']['width'] and 0 <= pos['y'] < self.state['board']['height']:
+                    # Avoid adding positions that collide with other parts of the snake bodies
+                    if pos not in snake['body']:
+                        bodyList.append(pos)
         if (left in bodyList):
             res.remove('left')
         if right in bodyList:
@@ -100,17 +158,32 @@ class mcTree:
         self.maxIter=5
         while(time.time()<timeLimit and count <self.maxIter):
             count+=1
+            #selection
             node = self.select(self.root)
             t = node
             c = 0
+            total_reward = 0  # Accumulate rewards from each step
             #t是我们目前选出的下一个node，在t随机进行一个action，直到endState或者循环>10停止搜索（dfs）
+            #simulation(rollout)
             while(t.endState()==False and c<10):
                 c+=1
                 t = t.performAction(random.choice(t.getNextActions()))
-            #t在搜索的最后一个节点，算reward，把通往t的路径上每一个node的reward更新（backProp）
-            reward = t.getReward()
-            self.backProp(t,reward)
-        #从root的child node里面挑出一个reward最高的，返回对应的action，这个是最终结果
+                # Accumulate reward based on the updated state in each step
+                step_reward = t.getReward()
+                total_reward += step_reward  # Sum up the rewards for all steps in the simulation
+            # Final Outcome Reward: apply death penalty or survival reward at the last node
+            if t.endState():
+                total_reward -= 100  # Strong penalty for death in the final node
+            else:
+                total_reward += 10  # Small bonus for surviving until the end of the simulation
+            # Backpropagation: update each node along the path with the cumulative reward
+            self.backProp(node, total_reward)
+
+            
+            # t在搜索的最后一个节点，算reward，把通往t的路径上每一个node的reward更新（backProp）
+            # reward = t.getReward()
+            # self.backProp(t,reward)
+        #从root的child node里面(among diff t)挑出一个reward最高的，返回对应的action，这个是最终结果
         bestC = self.getBestChild(self.root, 0)
         action = None
         for nextA in self.root.children.keys():
@@ -131,9 +204,11 @@ class mcTree:
         return node
     #这里node应该是dfs搜索的尽头，从root到node路径上的每个节点reward更新
     def backProp(self,node,reward):
+        gamma = 0.9  # Discount factor
         while(node):
             node.visits+=1
             node.reward+=reward
+            reward *= gamma  # Apply discount to reward as we move up the tree
             node= node.parent   
         
     #选择一个reward比较高的node，v是一个threshold，大于v的随机返回，如果没有大于v的返回最大的
