@@ -4,6 +4,15 @@ import time
 from copy import deepcopy
 from typing import Dict, List, Optional, Set, Tuple
 
+# Solo game
+# FOOD_SEEKING_CONSTANT = 0
+# IS_SOLO_MODE = True
+
+
+# Multi-agent competition
+FOOD_SEEKING_CONSTANT = 0.5
+IS_SOLO_MODE = False
+
 
 class Node:
     def __init__(self, game_state: Dict, parent=None, action=None):
@@ -133,7 +142,7 @@ class Node:
     def is_terminal(self) -> bool:
         """Check if current state is terminal (game over)."""
         # Game is over if snake is dead or no valid moves
-        return (len(self.state["board"]["snakes"]) <= 1  # Use 0 when testing with only one snake!
+        return (len(self.state["board"]["snakes"]) <= (0 if IS_SOLO_MODE else 1)
                 or
                 self.state["you"]["health"] <= 0
                 or
@@ -151,45 +160,46 @@ class Node:
         # reward += 50.0
 
         # Get distance to closest food
-        closest_food_dist = self.get_closest_food_distance()
-        if closest_food_dist is not None:
-            # Strong reward for being close to food - this is now the primary component
-            # We should NOT have this! This actually prevent the snake from moving towards food but wandering around food
-            # reward = 1000.0 / (closest_food_dist + 1)
+        if not IS_SOLO_MODE:
+            closest_food_dist = self.get_closest_food_distance()
+            if closest_food_dist is not None:
+                # Strong reward for being close to food - this is now the primary component
+                # We should NOT have this! This actually prevent the snake from moving towards food but wandering around food
+                # reward = 1000.0 / (closest_food_dist + 1)
 
-            # Extra reward for being very close to food
-            # if closest_food_dist <= 2:
-            #     reward += 50
+                # Extra reward for being very close to food
+                # if closest_food_dist <= 2:
+                #     reward += 50
 
-            # Check if we moved closer to or further from food
+                # Check if we moved closer to or further from food
+                if self.parent is not None:
+                    prev_dist = self.parent.get_closest_food_distance()
+                    if prev_dist is not None:
+                        if closest_food_dist < prev_dist:  # Moving closer to food
+                            reward += 100.0
+                        else:  # Moving away from food
+                            reward -= 100.0
+                pass
+
+            # Huge reward for eating food
             if self.parent is not None:
-                prev_dist = self.parent.get_closest_food_distance()
-                if prev_dist is not None:
-                    if closest_food_dist < prev_dist:  # Moving closer to food
-                        reward += 100.0
-                    else:  # Moving away from food
-                        reward -= 100.0
-            pass
+                if self.state["you"]["health"] == 100 and self.parent.state["you"]["health"] < 100:
+                    reward += 200.0
 
-        # Huge reward for eating food
-        if self.parent is not None:
-            if self.state["you"]["health"] == 100 and self.parent.state["you"]["health"] < 100:
-                reward += 200.0
-
-            # Penalize moving towards dangerous positions
-            dangerous_positions = self.parent.get_dangerous_positions()
-            # print("danger positions")
-            # print(dangerous_positions)
-            head_pos = (self.state["you"]["head"]["x"], self.state["you"]["head"]["y"])
-            # print("my head at", head_pos)
-            if head_pos in dangerous_positions:
-                # Significant penalty but not as severe as death
-                # print("self state")
-                # print(self.state)
-                # print("parent state")
-                # print(self.parent.state)
-                # print("danger")
-                reward -= 700.0
+                # Penalize moving towards dangerous positions
+                dangerous_positions = self.parent.get_dangerous_positions()
+                # print("danger positions")
+                # print(dangerous_positions)
+                head_pos = (self.state["you"]["head"]["x"], self.state["you"]["head"]["y"])
+                # print("my head at", head_pos)
+                if head_pos in dangerous_positions:
+                    # Significant penalty but not as severe as death
+                    # print("self state")
+                    # print(self.state)
+                    # print("parent state")
+                    # print(self.parent.state)
+                    # print("danger")
+                    reward -= 700.0
 
         return reward
 
@@ -653,7 +663,7 @@ class MCTS:
                 # Combine MCTS value with distance to food
                 mcts_score = child.value / child.visits if child.visits > 0 else float('-inf')
                 distance_score = 1500.0 / (distance_to_food + 1)  # Normalize distance score
-                combined_score = (0.5 * mcts_score) + (0.5 * distance_score)
+                combined_score = ((1 - FOOD_SEEKING_CONSTANT) * mcts_score) + (FOOD_SEEKING_CONSTANT * distance_score)
 
                 print(
                     f"Action [{child.action}]: visits={child.visits} mcts_score={mcts_score}\t distance_score={distance_score}\t combined_score={combined_score}")
