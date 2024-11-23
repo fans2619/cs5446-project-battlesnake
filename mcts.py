@@ -2,7 +2,7 @@ import math
 import random
 import time
 from copy import deepcopy
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set, Tuple
 
 
 class Node:
@@ -71,6 +71,34 @@ class Node:
                 valid_moves.remove(move)
 
         return valid_moves
+
+    def get_dangerous_positions(self) -> Set[Tuple[int, int]]:
+        """Get positions that could be reached by longer enemy snakes in one move."""
+        dangerous_positions = set()
+        my_length = len(self.state["you"]["body"])
+
+        for snake in self.state["board"]["snakes"]:
+            # Skip our own snake
+            if snake["id"] == self.state["you"]["id"]:
+                continue
+
+            # Only consider longer or equal snakes
+            if len(snake["body"]) < my_length:
+                continue
+
+            # Get all possible next positions for this snake
+            head = snake["head"]
+            possible_moves = [
+                (head["x"] + dx, head["y"] + dy)
+                for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]
+                if 0 <= head["x"] + dx < self.state["board"]["width"]
+                   and 0 <= head["y"] + dy < self.state["board"]["height"]
+            ]
+
+            # Add all possible next positions to dangerous positions
+            dangerous_positions.update(possible_moves)
+
+        return dangerous_positions
 
     def _get_next_positions(self, pos: Dict[str, int]) -> Dict[str, Dict[str, int]]:
         """Get all possible next positions from current position."""
@@ -144,6 +172,13 @@ class Node:
         if self.parent is not None:
             if self.state["you"]["health"] == 100 and self.parent.state["you"]["health"] < 100:
                 reward += 300.0
+
+            # Penalize moving towards dangerous positions
+            dangerous_positions = self.parent.get_dangerous_positions()
+            head_pos = (self.state["you"]["head"]["x"], self.state["you"]["head"]["y"])
+            if head_pos in dangerous_positions:
+                # Significant penalty but not as severe as death
+                reward -= 750.0
 
         return reward
 
