@@ -40,6 +40,38 @@ class Node:
 
         return valid_moves
 
+    def _get_valid_actions_for_snake(self, snake: Dict) -> List[str]:
+        """Get list of valid moves for any snake."""
+        valid_moves = ["up", "down", "left", "right"]
+        head = snake["head"]
+        board_width = self.state["board"]["width"]
+        board_height = self.state["board"]["height"]
+
+        # Check board boundaries
+        if head["x"] == 0:
+            valid_moves.remove("left")
+        if head["x"] == board_width - 1:
+            valid_moves.remove("right")
+        if head["y"] == 0:
+            valid_moves.remove("down")
+        if head["y"] == board_height - 1:
+            valid_moves.remove("up")
+
+        # Check collisions
+        next_positions = self._get_next_positions(head)
+        for move in valid_moves.copy():
+            # Create temporary state to check collision
+            temp_state = deepcopy(self.state)
+            # Replace the snake we're checking with a modified version
+            for i, s in enumerate(temp_state["board"]["snakes"]):
+                if s["id"] == snake["id"]:
+                    temp_state["board"]["snakes"][i] = snake
+                    break
+            if self._is_collision(next_positions[move], temp_state):
+                valid_moves.remove(move)
+
+        return valid_moves
+
     def _get_next_positions(self, pos: Dict[str, int]) -> Dict[str, Dict[str, int]]:
         """Get all possible next positions from current position."""
         return {
@@ -49,10 +81,23 @@ class Node:
             "right": {"x": pos["x"] + 1, "y": pos["y"]}
         }
 
-    def _is_collision(self, pos: Dict[str, int], state: Dict) -> bool:
-        """Check if position collides with any snake body."""
+    def _is_collision(self, pos: Dict[str, int], state: Dict, new_heads: Dict[str, Dict[str, int]] = None) -> bool:
+        """
+        Check if position collides with any snake body or new heads.
+        new_heads: Dict mapping snake_id to new head position for simultaneous movement
+        """
+        # Check collisions with new heads from simultaneous movement
+        if new_heads:
+            # Head-to-head collisions
+            head_positions = list(new_heads.values())
+            if pos in head_positions and head_positions.count(pos) > 1:
+                return True
+
+        # Check collisions with snake bodies (excluding tails that will move)
         for snake in state["board"]["snakes"]:
-            for body_part in snake["body"][:-1]:  # Exclude tail as it will move
+            # For body collisions, exclude tail only if snake hasn't eaten
+            # Would need to know if snake is eating food this turn for perfect accuracy
+            for body_part in snake["body"][:-1]:
                 if pos["x"] == body_part["x"] and pos["y"] == body_part["y"]:
                     return True
         return False
@@ -77,17 +122,19 @@ class Node:
         reward -= (100 - self.state["you"]["health"])
 
         # Reward for length
-        reward += len(self.state["you"]["body"]) * 2
+        # reward += len(self.state["you"]["body"]) * 2
 
         # Reward for consuming some food and resuming full health
-        if self.state["you"]["health"] == 100:
-            reward += 50.0
+        if self.state["you"]["health"] >= 95:
+            reward += 100.0
+        else:
+            reward -= 20.0
 
         # Reward for being close to food when health is low
         if self.state["you"]["health"] < 50:
             closest_food_dist = self.get_closest_food_distance()
             if closest_food_dist is not None:
-                reward += (1000.0 / (closest_food_dist + 1))
+                reward += (100.0 / (closest_food_dist + 1))
 
         # Small penalization if did not move towards the food next to it
         if self.parent is not None:
@@ -160,73 +207,130 @@ class MCTS:
 
         return best_child
 
-    def _expand(self, node: Node) -> Node:
-        """Create a new child node."""
-        action = random.choice(node.unexpanded_actions)
-        node.unexpanded_actions.remove(action)
-
-        # Create new state by applying action
-        new_state = deepcopy(node.state)
-        self._apply_action(new_state, action)
-
-        # Create and store new node
-        child = Node(new_state, parent=node, action=action)
-        node.children[action] = child
-        return child
-
-    def _apply_action(self, state: Dict, action: str) -> None:
-        """Apply action to state."""
-        head = state["you"]["head"]
-        new_head = {
-            "x": head["x"] + (1 if action == "right" else -1 if action == "left" else 0),
-            "y": head["y"] + (1 if action == "up" else -1 if action == "down" else 0)
+    def _get_next_position(self, pos: Dict[str, int], action: str) -> Dict[str, int]:
+        """Get next position given current position and action."""
+        return {
+            "x": pos["x"] + (1 if action == "right" else -1 if action == "left" else 0),
+            "y": pos["y"] + (1 if action == "up" else -1 if action == "down" else 0)
         }
 
-        # Update snake body
-        state["you"]["body"].insert(0, new_head)
-        state["you"]["head"] = new_head
+    def _apply_simultaneous_moves(self, state: Dict, moves: Dict[str, str]) -> None:
+        """Apply all snake moves simultaneously."""
+        # First collect all new head positions
+        new_heads = {}
+        snakes_eating = set()  # Track which snakes are eating food
 
-        # Handle food
-        if new_head in state["board"]["food"]:
-            state["board"]["food"].remove(new_head)
-            state["you"]["health"] = 100
-        else:
-            state["you"]["body"].pop()
-            state["you"]["health"] -= 1
+        for snake_id, action in moves.items():
+            # Find the snake
+            snake = None
+            for s in state["board"]["snakes"]:
+                if s["id"] == snake_id:
+                    snake = s
+                    break
+            if not snake:
+                continue
 
-        # Update snake in board snakes list
+            # Calculate new head position
+            new_head = self._get_next_position(snake["head"], action)
+            new_heads[snake_id] = new_head
+
+            # Check if snake will eat food
+            if new_head in state["board"]["food"]:
+                snakes_eating.add(snake_id)
+
+        # Check for head-to-head collisions and remove losing snakes
+        # In head-to-head, longer snake wins
+        head_positions = {}  # position -> list of (snake_id, length)
+        for snake_id, new_head in new_heads.items():
+            pos_str = f"{new_head['x']},{new_head['y']}"
+            snake = next(s for s in state["board"]["snakes"] if s["id"] == snake_id)
+            head_positions.setdefault(pos_str, []).append((snake_id, len(snake["body"])))
+
+        # Remove snakes that lose head-to-head collisions
+        for pos_list in head_positions.values():
+            if len(pos_list) > 1:
+                # Find max length
+                max_length = max(length for _, length in pos_list)
+                # Remove all snakes of non-max length
+                for snake_id, length in pos_list:
+                    if length < max_length:
+                        new_heads.pop(snake_id)
+
+        # Now update all surviving snakes simultaneously
         for i, snake in enumerate(state["board"]["snakes"]):
-            if snake["id"] == state["you"]["id"]:
-                state["board"]["snakes"][i] = state["you"]
-                break
+            if snake["id"] not in new_heads:
+                # Snake died in head-to-head collision
+                state["board"]["snakes"].pop(i)
+                continue
 
-    # def _rollout(self, node: Node) -> float:
-    #     """Simulate game from node until terminal state."""
-    #     state = deepcopy(node.state)
-    #     current_node = Node(state)
-    #     depth = 0
-    #
-    #     while not current_node.is_terminal() and depth < self.rollout_limit:
-    #         action = self._rollout_policy(current_node)
-    #         self._apply_action(state, action)
-    #         current_node = Node(state)
-    #         depth += 1
-    #
-    #     return current_node.get_reward()
+            new_head = new_heads[snake["id"]]
 
-    # Use sum of rewards during rollout instead of the reward from terminal node
+            # Update snake
+            snake["body"].insert(0, new_head)
+            snake["head"] = new_head
+
+            # Handle food
+            if snake["id"] in snakes_eating:
+                state["board"]["food"].remove(new_head)
+                snake["health"] = 100
+            else:
+                snake["body"].pop()
+                snake["health"] -= 1
+
+    def _expand(self, node: Node) -> Node:
+        """Create a new child node."""
+        my_action = random.choice(node.unexpanded_actions)
+        node.unexpanded_actions.remove(my_action)
+
+        # Create new state by applying actions
+        new_state = deepcopy(node.state)
+
+        # Collect moves for all snakes
+        moves = {node.state["you"]["id"]: my_action}
+
+        # Get random moves for other snakes
+        for snake in new_state["board"]["snakes"]:
+            if snake["id"] != new_state["you"]["id"]:
+                temp_node = Node(new_state)
+                valid_moves = temp_node._get_valid_actions_for_snake(snake)
+                if valid_moves:
+                    moves[snake["id"]] = random.choice(valid_moves)
+
+        # Apply all moves simultaneously
+        self._apply_simultaneous_moves(new_state, moves)
+
+        # Create and store new node
+        child = Node(new_state, parent=node, action=my_action)
+        node.children[my_action] = child
+        return child
+
     def _rollout(self, node: Node) -> float:
         state = deepcopy(node.state)
-        current_node = Node(state, parent=node)
+        current_node = Node(state)
         depth = 0
         total_reward = 0
         discount_factor = 0.95  # Favor earlier rewards
 
         while not current_node.is_terminal() and depth < self.rollout_limit:
             total_reward += current_node.get_reward() * (discount_factor ** depth)
-            action = self._rollout_policy(current_node)
-            self._apply_action(state, action)
-            current_node = Node(state, parent=current_node)
+
+            # Collect moves for all snakes
+            moves = {}
+
+            # Get rollout policy move for our snake
+            moves[state["you"]["id"]] = self._rollout_policy(current_node)
+
+            # Get random moves for other snakes
+            for snake in state["board"]["snakes"]:
+                if snake["id"] != state["you"]["id"]:
+                    temp_node = Node(state)
+                    valid_moves = temp_node._get_valid_actions_for_snake(snake)
+                    if valid_moves:
+                        moves[snake["id"]] = random.choice(valid_moves)
+
+            # Apply all moves simultaneously
+            self._apply_simultaneous_moves(state, moves)
+            current_node = Node(state)
             depth += 1
 
         # Add final state reward
@@ -239,7 +343,7 @@ class MCTS:
         if not valid_actions:
             return "up"  # Default move if no valid moves
 
-        # Prioritize food when health is low
+        # Always prioritize food seeking
         # if node.state["you"]["health"] < 50:
         best_action = self._get_food_seeking_action(node, valid_actions)
         if best_action:
