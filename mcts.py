@@ -113,9 +113,12 @@ class Node:
     def get_reward(self) -> float:
         """Calculate reward with strong emphasis on food-seeking behavior."""
         if self.state["you"]["health"] <= 0:
-            return -1000.0  # Death is still heavily penalized
+            return -1200.0  # Death is still heavily penalized
 
         reward = 0.0
+
+        # Small survival reward
+        reward += 10.0
 
         # Get distance to closest food
         closest_food_dist = self.get_closest_food_distance()
@@ -179,7 +182,7 @@ class MCTS:
 
         # Select best action based on average value
         best_action = self._get_best_action(root)
-        print(f"Select best action {best_action} after {iter_count} iterations")
+        print(f"Select best action {best_action} after {iter_count} iterations\n")
         return best_action
 
     def _select(self, node: Node) -> Node:
@@ -207,13 +210,6 @@ class MCTS:
                 best_child = child
 
         return best_child
-
-    def _get_next_position(self, pos: Dict[str, int], action: str) -> Dict[str, int]:
-        """Get next position given current position and action."""
-        return {
-            "x": pos["x"] + (1 if action == "right" else -1 if action == "left" else 0),
-            "y": pos["y"] + (1 if action == "up" else -1 if action == "down" else 0)
-        }
 
     def _apply_simultaneous_moves(self, state: Dict, moves: Dict[str, str]) -> None:
         """Apply all snake moves simultaneously."""
@@ -254,7 +250,7 @@ class MCTS:
                 max_length = max(length for _, length in pos_list)
                 # Remove all snakes of non-max length
                 for snake_id, length in pos_list:
-                    if length < max_length:
+                    if length <= max_length:
                         new_heads.pop(snake_id)
 
         # Now update all surviving snakes simultaneously
@@ -398,7 +394,10 @@ class MCTS:
                 # Combine MCTS value with distance to food
                 mcts_score = child.value / child.visits if child.visits > 0 else float('-inf')
                 distance_score = 500.0 / (distance_to_food + 1)  # Normalize distance score
-                combined_score = (0.95 * mcts_score) + (0.05 * distance_score)
+                combined_score = (0.65 * mcts_score) + (0.35 * distance_score)
+
+                print(
+                    f"Action [{child.action}]: mcts_score={mcts_score}\t distance_score={distance_score}\t combined_score={combined_score}")
 
                 if combined_score > best_score:
                     best_score = combined_score
