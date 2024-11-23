@@ -111,35 +111,36 @@ class Node:
                 not self._get_valid_actions())
 
     def get_reward(self) -> float:
-        """Calculate reward for current state."""
+        """Calculate reward with strong emphasis on food-seeking behavior."""
         if self.state["you"]["health"] <= 0:
-            return -1000.0  # Heavy penalty for death
+            return -1000.0  # Death is still heavily penalized
 
         reward = 0.0
 
-        # Penalize for reduced health to encourage the snake to find food
-        # reward = float(self.state["you"]["health"]) / 10.0
-        reward -= (100 - self.state["you"]["health"])
+        # Get distance to closest food
+        closest_food_dist = self.get_closest_food_distance()
+        if closest_food_dist is not None:
+            # Strong reward for being close to food - this is now the primary component
+            # We should NOT have this! This actually prevent the snake from moving towards food but wandering around food
+            # reward = 1000.0 / (closest_food_dist + 1)
 
-        # Reward for length
-        # reward += len(self.state["you"]["body"]) * 2
+            # Extra reward for being very close to food
+            if closest_food_dist <= 2:
+                reward *= 2
 
-        # Reward for consuming some food and resuming full health
-        if self.state["you"]["health"] >= 95:
-            reward += 100.0
-        else:
-            reward -= 20.0
+            # Check if we moved closer to or further from food
+            if self.parent is not None:
+                prev_dist = self.parent.get_closest_food_distance()
+                if prev_dist is not None:
+                    if closest_food_dist < prev_dist:  # Moving closer to food
+                        reward += 100.0
+                    elif closest_food_dist > prev_dist:  # Moving away from food
+                        reward -= 100.0
 
-        # Reward for being close to food when health is low
-        if self.state["you"]["health"] < 50:
-            closest_food_dist = self.get_closest_food_distance()
-            if closest_food_dist is not None:
-                reward += (100.0 / (closest_food_dist + 1))
-
-        # Small penalization if did not move towards the food next to it
+        # Huge reward for eating food
         if self.parent is not None:
-            if self.parent.get_closest_food_distance() == 1 and self.state["you"]["health"] != 100:
-                reward -= 50.0
+            if self.state["you"]["health"] == 100 and self.parent.state["you"]["health"] < 100:
+                reward += 300.0
 
         return reward
 
@@ -338,42 +339,98 @@ class MCTS:
         return total_reward
 
     def _rollout_policy(self, node: Node) -> str:
-        """Simple rollout policy using heuristics."""
+        """Aggressive food-seeking rollout policy."""
         valid_actions = node._get_valid_actions()
         if not valid_actions:
             return "up"  # Default move if no valid moves
 
-        # Always prioritize food seeking
-        # if node.state["you"]["health"] < 50:
-        best_action = self._get_food_seeking_action(node, valid_actions)
-        if best_action:
-            return best_action
+        # If there's food, always try to move towards it
+        if node.state["board"]["food"]:
+            head = node.state["you"]["head"]
+            closest_food = min(
+                node.state["board"]["food"],
+                key=lambda food: abs(food["x"] - head["x"]) + abs(food["y"] - head["y"])
+            )
 
-        # Otherwise choose random valid action
+            # Calculate distances for each move
+            distances = {}
+            for action in valid_actions:
+                next_pos = self._get_next_position(head, action)
+                distances[action] = abs(next_pos["x"] - closest_food["x"]) + abs(next_pos["y"] - closest_food["y"])
+
+            # Return the action that gets us closest to food
+            return min(distances.items(), key=lambda x: x[1])[0]
+
         return random.choice(valid_actions)
 
-    def _get_food_seeking_action(self, node: Node, valid_actions: List[str]) -> Optional[str]:
-        """Choose action that moves closer to nearest food."""
-        if not node.state["board"]["food"]:
-            return None
+    def _get_next_position(self, pos: Dict[str, int], action: str) -> Dict[str, int]:
+        """Get next position given current position and action."""
+        if action == "up":
+            return {"x": pos["x"], "y": pos["y"] + 1}
+        elif action == "down":
+            return {"x": pos["x"], "y": pos["y"] - 1}
+        elif action == "left":
+            return {"x": pos["x"] - 1, "y": pos["y"]}
+        else:  # right
+            return {"x": pos["x"] + 1, "y": pos["y"]}
 
-        head = node.state["you"]["head"]
-        closest_food = min(
-            node.state["board"]["food"],
-            key=lambda food: abs(food["x"] - head["x"]) + abs(food["y"] - head["y"])
-        )
+    def _get_best_action(self, root: Node) -> str:
+        """Select best action based on average value and distance to food."""
+        if not root.children:
+            return "up"  # Default move if no children
 
-        # Try to move towards food
-        if closest_food["x"] > head["x"] and "right" in valid_actions:
-            return "right"
-        if closest_food["x"] < head["x"] and "left" in valid_actions:
-            return "left"
-        if closest_food["y"] > head["y"] and "up" in valid_actions:
-            return "up"
-        if closest_food["y"] < head["y"] and "down" in valid_actions:
-            return "down"
+        # If there's food, factor in distance to food when selecting best action
+        if root.state["board"]["food"]:
+            head = root.state["you"]["head"]
+            closest_food = min(
+                root.state["board"]["food"],
+                key=lambda food: abs(food["x"] - head["x"]) + abs(food["y"] - head["y"])
+            )
 
-        return None
+            best_score = float('-inf')
+            best_action = "up"
+
+            for action, child in root.children.items():
+                # Calculate next position for this action
+                next_pos = self._get_next_position(head, action)
+                distance_to_food = abs(next_pos["x"] - closest_food["x"]) + abs(next_pos["y"] - closest_food["y"])
+
+                # Combine MCTS value with distance to food
+                mcts_score = child.value / child.visits if child.visits > 0 else float('-inf')
+                distance_score = 500.0 / (distance_to_food + 1)  # Normalize distance score
+                combined_score = (0.95 * mcts_score) + (0.05 * distance_score)
+
+                if combined_score > best_score:
+                    best_score = combined_score
+                    best_action = action
+
+            return best_action
+
+        # If no food, fall back to standard MCTS selection
+        return max(root.children.items(), key=lambda x: x[1].value / x[1].visits if x[1].visits > 0 else float('-inf'))[0]
+
+    # def _get_food_seeking_action(self, node: Node, valid_actions: List[str]) -> Optional[str]:
+    #     """Choose action that moves closer to nearest food."""
+    #     if not node.state["board"]["food"]:
+    #         return None
+    #
+    #     head = node.state["you"]["head"]
+    #     closest_food = min(
+    #         node.state["board"]["food"],
+    #         key=lambda food: abs(food["x"] - head["x"]) + abs(food["y"] - head["y"])
+    #     )
+    #
+    #     # Try to move towards food
+    #     if closest_food["x"] > head["x"] and "right" in valid_actions:
+    #         return "right"
+    #     if closest_food["x"] < head["x"] and "left" in valid_actions:
+    #         return "left"
+    #     if closest_food["y"] > head["y"] and "up" in valid_actions:
+    #         return "up"
+    #     if closest_food["y"] < head["y"] and "down" in valid_actions:
+    #         return "down"
+    #
+    #     return None
 
     def _backpropagate(self, node: Node, reward: float) -> None:
         """Update values up the tree."""
@@ -382,23 +439,23 @@ class MCTS:
             node.value += reward
             node = node.parent
 
-    def _get_best_action(self, root: Node) -> str:
-        """Select best action based on average value."""
-        best_value = float('-inf')
-        best_action = "up"  # Default move
-        print(root.children.items())
-        for action, child in root.children.items():
-            print(action, child.value, child.visits)
-            child_value = child.value / child.visits if child.visits > 0 else float('-inf')
-            if child_value > best_value:
-                best_value = child_value
-                best_action = action
-
-        return best_action
+    # def _get_best_action(self, root: Node) -> str:
+    #     """Select best action based on average value."""
+    #     best_value = float('-inf')
+    #     best_action = "up"  # Default move
+    #     print(root.children.items())
+    #     for action, child in root.children.items():
+    #         print(action, child.value, child.visits)
+    #         child_value = child.value / child.visits if child.visits > 0 else float('-inf')
+    #         if child_value > best_value:
+    #             best_value = child_value
+    #             best_action = action
+    #
+    #     return best_action
 
 
 def move(game_state: Dict) -> Dict:
     """Main move function called by the game."""
-    mcts = MCTS(time_limit=0.1)  # 100ms time limit
+    mcts = MCTS(time_limit=0.3)  # 300ms time limit
     next_move = mcts.search(game_state)
     return {"move": next_move}
