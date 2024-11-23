@@ -20,7 +20,7 @@ def info() -> typing.Dict:
     print("INFO")
 
     return {
-        "apiversion": "mcts",
+        "apiversion": "2",
         "author": "cs5446-g37",
         "color": "#32A852",
         "head": "rudolph",
