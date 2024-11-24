@@ -43,10 +43,8 @@ import mcTree
 # Valid moves are "up", "down", "left", or "right"
 # See https://docs.battlesnake.com/api/example-move for available data
 def move(game_state: typing.Dict) -> typing.Dict:
-    tre  = mcTree.mcTree(0.001,3)
-    
-    next_move = tre.search(game_state)
-
+    tre  = mcTree.MonteCarloSearchTree(25)
+    next_move = tre.find_best_action(game_state)
     return {"move": next_move}
     
 SyntaxError

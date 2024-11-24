@@ -1,180 +1,148 @@
-import math,random
-class Node:
-    def __init__(self,game_state,parent):
-        self.state = game_state
-        self.parent = parent
-        self.children = {}#{action: child node}
-        self.visits = 0
-        self.reward = 0
-        self.fullyExpand = False#所有action都已经加入children
-    #运行时间越长，reward越大，没考虑事物
-    #运行时间越长，消耗健康值越高，这个也没考虑
-    def getReward(self):
-        if(self.endState()):
-            return int(self.state['turn'])
-        else:
-            return 10000
-        
-    def endState(self):
-        if(len(self.getNextActions())==0 or self.state['you']['health']==0):
-            return True
-        return False
-    #a：action
-    #返回在这个node perform这个action后的下一个node
-    def performAction(self,a):
-        from copy import deepcopy
-        nextState = deepcopy(self.state)
-        #改头的位置
-        if(a=='up'):
-            nextState['you']['head']['y']+=1
-        elif(a=='down'):
-            nextState['you']['head']['y']-=1
-        elif(a=='right'):
-            nextState['you']['head']['x']+=1
-        elif(a=='left'):
-            nextState['you']['head']['x']-=1
-        else:
-            raise Exception(a)
-
-        nextState['turn']+=1
-        #检查是否吃掉棋盘上的事物
-        if(nextState['you']['head'] in nextState['board']['food']):
-            nextState['board']['food'].remove(nextState['you']['head'])
-            nextState['you']['health']=100
-        else:
-            nextState['you']['health']-=1
-        #去掉尾巴
-        nextState['you']['body'].pop()
-        nextState['you']['body'].insert(0,nextState['you']['head'])
-        #snakes应该是棋盘上所有蛇的合集，把自己的蛇更新一下
-        for q in range(len(nextState['board']['snakes'])):
-            if(nextState['board']['snakes'][q]['id']==nextState['you']['id']):
-                nextState['board']['snakes'][q]=deepcopy(nextState['you'])
-                break  
-        return Node(nextState,self)
-            
-    #下一步所有可能的action，无筛选
-    def getNextActions(self):
-        res = ['up', 'down', 'left', 'right']
-        
-        if self.state['board']['width'] - self.state['you']['head']['x'] == 1:  
-            res.remove('right')
-        if self.state['you']['head']['x']== 0:                         
-            res.remove('left')
-        if self.state['board']['height'] -self.state['you']['head']['y'] == 1:  
-            res.remove('up')
-        if self.state['you']['head']['y'] == 0:                        
-            res.remove('down')
-            
-        left = {'x': self.state['you']['head']['x'] -1, 'y': self.state['you']['head']['y']}
-        right = {'x':self.state['you']['head']['x'] +1, 'y': self.state['you']['head']['y']}
-        up = {'x': self.state['you']['head']['x'], 'y': self.state['you']['head']['y'] + 1}
-        down = {'x': self.state['you']['head']['x'], 'y': self.state['you']['head']['y'] - 1}
-            
-        bodyList=list()
-        for i in range(len(self.state['board']['snakes'])):
-            bodyList.extend(self.state['board']['snakes'][i]['body'])
-
-        if (left in bodyList):
-            res.remove('left')
-        if right in bodyList:
-            res.remove('right')
-        if up in bodyList:
-            res.remove('up')
-        if down in bodyList:
-            res.remove('down')
- 
-        return res
-        
-
-class mcTree:
-    def __init__(self,maxTime, maxIter):
-        self.maxTime = maxTime
-        self.maxIter = maxIter
-    #每次移动产生一个root，从这个root开始search，返回的action就是下一步move
-    def search(self,start):
-        import time
-        self.root = Node(start,None)
-        timeLimit = time.time() + self.maxTime
-        count = 0
-        self.maxIter=5
-        while(time.time()<timeLimit and count <self.maxIter):
-            count+=1
-            node = self.select(self.root)
-            t = node
-            c = 0
-            #t是我们目前选出的下一个node，在t随机进行一个action，直到endState或者循环>10停止搜索（dfs）
-            while(t.endState()==False and c<10):
-                c+=1
-                t = t.performAction(random.choice(t.getNextActions()))
-            #t在搜索的最后一个节点，算reward，把通往t的路径上每一个node的reward更新（backProp）
-            reward = t.getReward()
-            self.backProp(t,reward)
-        #从root的child node里面挑出一个reward最高的，返回对应的action，这个是最终结果
-        bestC = self.getBestChild(self.root, 0)
-        action = None
-        for nextA in self.root.children.keys():
-            if(self.root.children[nextA]==bestC):
-                action=nextA
-        #如果他返回0就是下一步没有可行的action了。。。。。。
-        print(len(self.root.getNextActions()))
-        return action
+from random import choice
+class MonteCarloSearchTree:
+    def __init__(self, max_iterations):
+        self.max_iterations = max_iterations
     
-    #如果所有children都已经被展开过了，挑reward值最大的那个路径的尽头的node返回，我们接着这个node继续dfs，更新reward
-    #如果没有，随便一个action，下一个node展开（就是dfs）
-    def select(self, node):
-        while(node.endState()==False):
-            if(node.fullyExpand):
-                node = self.getBestChild(node)
+        
+    def find_best_action(self, initial_state):
+        root = GameNode(initial_state, None)
+        for i  in range(self.max_iterations):
+            selected_node = self.traverse(root)
+            terminal_node = selected_node
+    
+            while not terminal_node.is_terminal():
+                possible_actions = terminal_node.get_valid_actions()
+                terminal_node= terminal_node.apply_action(choice(possible_actions))
+            reward = terminal_node.calculate_reward()
+
+            while selected_node is not None:
+                selected_node.visit_count+= 1
+                selected_node.total_reward+=reward
+                selected_node =selected_node.parent
+        best_action = max(root.children, key=lambda action: root.children[action].visit_count)
+        return best_action
+
+    def traverse(self, node):
+        while not node.is_terminal():
+            if node.is_fully_expanded:
+                node = self.select_child(node)
             else:
-                return self.expand(node)#next node
+                return self.expand(node)
         return node
-    #这里node应该是dfs搜索的尽头，从root到node路径上的每个节点reward更新
-    def backProp(self,node,reward):
-        while(node):
-            node.visits+=1
-            node.reward+=reward
-            node= node.parent   
-        
-    #选择一个reward比较高的node，v是一个threshold，大于v的随机返回，如果没有大于v的返回最大的
-    def getBestChild(self,node,exploration=0):
-        cons = 1/math.sqrt(2)
-        bn = list()
-        b = float("-inf")
-        for n in node.children.values():
-            v=n.reward/n.visits+cons*math.sqrt(2*math.log(node.visits)/n.visits)
-            if(v>b):
-                b=v
-                bn =[n]
-            elif(v==b):
-                bn.append(n)
-   
-        if(len(bn)==0):
-            v=0
-            curNode=None
-            for n in node.children.values():
-                if(n.reward>v):
-                    v=n.reward
-                    curNode=n
-            return curNode
-        choice = random.choice(bn)
-        position = bn.index(choice)  # 获取元素在列表中的索引
-        # print(f"选中的元素位于列表的第 {position + 1} 位。一共{len(bn)}个元素可以选")
-        return choice
+
+
+    def select_child(self, node,exploration_constant=1.414):
+        import math
+        best_value = float('-inf')
+        best_children = []
+        for child in node.children.values():
+            ucb_value = (child.total_reward / child.visit_count +
+                         exploration_constant * math.sqrt(math.log(node.visit_count) / child.visit_count))
+            if ucb_value > best_value:
+                best_value = ucb_value
+                best_children = [child]
+            elif ucb_value == best_value:
+                best_children.append(child)
+
+        from random import choice
+        return choice(best_children)
+
+    def expand(self, node):
+        untried_actions = [action for action in node.get_valid_actions() if action not in node.children]
+        action = untried_actions.pop()
+        child_node = node.apply_action(action)
+        node.children[action] = child_node
+        if not untried_actions:
+            node.is_fully_expanded = True
+        return child_node
     
-    #对于node，找到第一个没有被dfs探索过的node
-    def expand(self,node):
-        actions = node.getNextActions()
-        for a in actions:
-            if a not in node.children:
-                node.children[a] = node.performAction(a)
-                if(len(actions)==len(node.children)):
-                    node.fullyExpand = True
-                return node.children[a]
-            
-        print("Should never reach here")
-                
-        
-        
-        
-        
+class GameNode:
+    def __init__(self, state, parent_node):
+        self.game_state = state
+        self.parent = parent_node
+        self.children = dict()
+        self.visit_count =0
+        self.total_reward = 0
+        self.is_fully_expanded = False
+
+    def calculate_reward(self):
+        #Calculate the reward based on whether the game is in a terminal state.
+        if self.is_terminal():
+            return self.game_state['turn']+self.game_state['you']['length']
+        return 1e4/self.get_min_dis()  # Arbitrary high reward for non-terminal states
+    
+    def get_min_dis(self):
+        head = self.game_state['you']['head']
+        food_list = self.game_state['board']['food']
+        if not food_list:
+            return float('inf')    
+        min_distance = float('inf')
+        for food in food_list:
+            distance = abs(food['x'] - head['x']) + abs(food['y'] - head['y'])
+            if distance < min_distance:
+                min_distance = distance
+        return min_distance
+
+    def is_terminal(self):
+        # Check if the game has reached a terminal state.
+        return len(self.get_valid_actions()) == 0 or self.game_state['you']['health'] == 0
+
+    def apply_action(self, action):
+        #Generate the resulting game state after applying a specific action.
+        from copy import deepcopy
+        new_state = deepcopy(self.game_state)
+        head = new_state['you']['head']
+
+        # Define movement directions
+        movement = {'up': (0, 1), 'down': (0, -1), 'left': (-1, 0), 'right': (1, 0)}
+        if action not in movement:
+            raise ValueError(f"Invalid action: {action}")
+
+        head['x'] += movement[action][0]
+        head['y'] += movement[action][1]
+        new_state['turn'] += 1
+
+        # Handle food consumption
+        if head in new_state['board']['food']:
+            new_state['board']['food'].remove(head)
+            new_state['you']['health'] = 100
+            new_state['you']['length']+=1
+        else:
+            new_state['you']['health'] -= 1
+
+        # Update snake's body
+        new_state['you']['body'].insert(0, deepcopy(head))
+        new_state['you']['body'].pop()
+
+        # Update the board to reflect the new state of the snake
+        for snake in new_state['board']['snakes']:
+            if snake['id'] == new_state['you']['id']:
+                snake.update(new_state['you'])
+                break
+
+        return GameNode(new_state, self)
+
+    def get_valid_actions(self):
+        """Determine all valid actions that the snake can take."""
+        possible_actions = ['up', 'down', 'left', 'right']
+        head = self.game_state['you']['head']
+        width, height = self.game_state['board']['width'], self.game_state['board']['height']
+
+        if head['x'] == 0:
+            possible_actions.remove('left')
+        if head['x'] == width - 1:
+            possible_actions.remove('right')
+        if head['y'] == 0:
+            possible_actions.remove('down')
+        if head['y'] == height - 1:
+            possible_actions.remove('up')
+
+        # Check for collisions with other snakes' bodies
+        all_snake_positions = [pos for snake in self.game_state['board']['snakes'] for pos in snake['body']]
+        movement = {'up': (0, 1), 'down': (0, -1), 'left': (-1, 0), 'right': (1, 0)}
+        for action in possible_actions[:]:
+            next_position = {'x': head['x'] + movement[action][0], 'y': head['y'] + movement[action][1]}
+            if next_position in all_snake_positions:
+                possible_actions.remove(action)
+
+        return possible_actions
