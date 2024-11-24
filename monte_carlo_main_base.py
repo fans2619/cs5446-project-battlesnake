@@ -10,8 +10,8 @@
 # To get you started we've included code to prevent your Battlesnake from moving backwards.
 # For more info see docs.battlesnake.com
 
-import random
 import typing
+
 
 # info is called when you create your Battlesnake on play.battlesnake.com
 # and controls your Battlesnake's appearance
@@ -36,18 +36,19 @@ def start(game_state: typing.Dict):
 # end is called when your Battlesnake finishes a game
 def end(game_state: typing.Dict):
     print("GAME OVER\n")
-    
 
-import mcTree
+
+import mcTree_base
+
+
 # move is called on every turn and returns your next move
 # Valid moves are "up", "down", "left", or "right"
 # See https://docs.battlesnake.com/api/example-move for available data
 def move(game_state: typing.Dict) -> typing.Dict:
-    tre  = mcTree.MonteCarloSearchTree(25)
+    tre = mcTree_base.MonteCarloSearchTree(25)
     next_move = tre.find_best_action(game_state)
     return {"move": next_move}
-    
-SyntaxError
+
 
 if __name__ == "__main__":
     from server import run_server
