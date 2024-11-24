@@ -7,5 +7,8 @@ WORKDIR /usr/app
 # Install dependencies
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
-# Run Battlesnake
-CMD [ "python", "main.py" ]
+# Add script and make it executable
+RUN chmod +x start.sh
+
+# Run the script
+CMD ["./start.sh"]

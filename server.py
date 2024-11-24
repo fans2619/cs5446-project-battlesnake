@@ -10,7 +10,7 @@ from flask import request
 load_dotenv()
 
 
-def run_server(handlers: typing.Dict):
+def run_server(handlers: typing.Dict, custom_port=None):
     app = Flask("Battlesnake")
 
     @app.get("/")
@@ -42,7 +42,7 @@ def run_server(handlers: typing.Dict):
         return response
 
     host = "0.0.0.0"
-    port = int(os.environ.get("PORT", "8000"))
+    port = custom_port or int(os.environ.get("PORT", "80"))
 
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
 

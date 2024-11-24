@@ -10,14 +10,19 @@
 # To get you started we've included code to prevent your Battlesnake from moving backwards.
 # For more info see docs.battlesnake.com
 
+
 import random
-import typing
+from collections import deque
+from typing import Dict, List, Optional, Union
+
+from astar_pathfinder import BattlesnakePathfinder
+from utils import manhattan_distance
 
 
 # info is called when you create your Battlesnake on play.battlesnake.com
 # and controls your Battlesnake's appearance
 # TIP: If you open your Battlesnake URL in a browser you should see this data
-def info() -> typing.Dict:
+def info() -> Dict:
     print("INFO")
 
     return {
@@ -30,20 +35,19 @@ def info() -> typing.Dict:
 
 
 # start is called when your Battlesnake begins a game
-def start(game_state: typing.Dict):
+def start(game_state: Dict):
     print("GAME START")
 
 
 # end is called when your Battlesnake finishes a game
-def end(game_state: typing.Dict):
+def end(game_state: Dict):
     print("GAME OVER\n")
 
 
 # move is called on every turn and returns your next move
 # Valid moves are "up", "down", "left", or "right"
 # See https://docs.battlesnake.com/api/example-move for available data
-def move(game_state: typing.Dict) -> typing.Dict:
-
+def move(game_state: Dict) -> Dict:
     is_move_safe = {"up": True, "down": True, "left": True, "right": True}
 
     # We've included code to prevent your Battlesnake from moving backwards
@@ -90,7 +94,6 @@ def move(game_state: typing.Dict) -> typing.Dict:
             is_move_safe["left"] = False
         if {"x": my_head["x"] + 1, "y": my_head["y"]} == segment:
             is_move_safe["right"] = False
-
     # Step 3 - Prevent your Battlesnake from colliding with other Battlesnakes
     opponents = game_state['board']['snakes']
 
@@ -110,46 +113,213 @@ def move(game_state: typing.Dict) -> typing.Dict:
     for move, isSafe in is_move_safe.items():
         if isSafe:
             safe_moves.append(move)
+        else:
+            print(f"UnSafe moves after initial checks: {move}")
 
     if len(safe_moves) == 0:
-        print(f"MOVE {game_state['turn']}: No safe moves detected! Moving down")
         return {"move": "down"}
 
-    # Step 4 - Move towards food instead of random, to regain health and survive longer
+    # step 4- move to food
+    next_move = None
     food = game_state['board']['food']
+    if len(food) > 0:
+        # Find closest food
+        target_food = get_closest_food(my_head, food)
+        print(f"Target food at: {target_food}")
 
-    # If we have safe moves and there's food, try to move towards closest food
-    if len(safe_moves) > 0 and len(food) > 0:
-        # Find closest food based on Manhattan distance between head and food
-        closest_food = food[0]
-        closest_distance = abs(my_head["x"] - food[0]["x"]) + abs(my_head["y"] - food[0]["y"])
+        # Initialize variables to track best move
+        max_accessible_area = -1
+        best_move = None
 
-        for f in food:
-            distance = abs(my_head["x"] - f["x"]) + abs(my_head["y"] - f["y"])
-            if distance < closest_distance:
-                closest_food = f
-                closest_distance = distance
+        # Get path to food using A* pathfinding
+        pathfinder = BattlesnakePathfinder(game_state)
+        path = pathfinder.find_path(my_head, target_food)
+        print(f"Path found: {path}")
 
-        # Try to move towards the food if it's safe
-        if my_head["x"] < closest_food["x"] and "right" in safe_moves:
-            next_move = "right"
-        elif my_head["x"] > closest_food["x"] and "left" in safe_moves:
-            next_move = "left"
-        elif my_head["y"] < closest_food["y"] and "up" in safe_moves:
-            next_move = "up"
-        elif my_head["y"] > closest_food["y"] and "down" in safe_moves:
-            next_move = "down"
+        if path and len(path) > 0:
+            potential_next_move = path[0]
+
+            # Calculate accessible area for the move suggested by pathfinding
+            new_head = simulate_move(my_head, potential_next_move)
+            path_accessible_area = flood_fill(new_head, game_state)
+
+            # Calculate minimum safe area based on snake length
+            min_area_threshold = len(game_state['you']['body']) * 1.25
+
+            # Check if the pathfinding move leads to sufficient space
+            if path_accessible_area >= min_area_threshold:
+                max_accessible_area = path_accessible_area
+                best_move = potential_next_move
+
+            # If pathfinding move isn't safe enough, evaluate all safe moves
+            if best_move is None:
+                for move in safe_moves:
+                    new_head = simulate_move(my_head, move)
+                    area = flood_fill(new_head, game_state)
+
+                    # Update best move if this move leads to larger accessible area
+                    if area > max_accessible_area and area >= min_area_threshold:
+                        max_accessible_area = area
+                        best_move = move
         else:
-            next_move = random.choice(safe_moves)
-    else:
-        next_move = random.choice(safe_moves)
+            # No path found, use improved naive move that considers accessible area
+            best_move = get_naive_move(my_head, target_food, safe_moves, game_state)
 
-    print(f"MOVE {game_state['turn']}: {next_move}")
+        # Final fallback if no move has been selected
+        if best_move is None and safe_moves:
+            next_move = choose_move_with_max_accessible_area(safe_moves, my_head, game_state)
+        else:
+            next_move = best_move
+
+    else:
+        # No food, move to position with maximum accessible area
+        next_move = choose_move_with_max_accessible_area(safe_moves, my_head, game_state)
+
+    # Final safety check
+    if next_move is None and safe_moves:
+        next_move = safe_moves[0]
+    elif next_move is None:
+        next_move = "up"
     return {"move": next_move}
+
+
+def get_closest_food(head: Dict, food_list: List[Dict]) -> Optional[Dict]:
+    """Find the closest food item using Manhattan distance."""
+    if not food_list:
+        return None
+
+    closest_food = min(
+        food_list,
+        key=lambda food: manhattan_distance((head['x'], head['y']), (food['x'], food['y']))
+    )
+    return closest_food
+
+
+# def get_naive_move(start_pos: Dict, goal_pos: Dict, safe_moves: List[str]) -> Union[str, None]:
+#     if not safe_moves:
+#         return None
+#
+#     # Try to move towards the goal if it's safe
+#     if start_pos["x"] < goal_pos["x"] and "right" in safe_moves:
+#         next_move = "right"
+#     elif start_pos["x"] > goal_pos["x"] and "left" in safe_moves:
+#         next_move = "left"
+#     elif start_pos["y"] < goal_pos["y"] and "up" in safe_moves:
+#         next_move = "up"
+#     elif start_pos["y"] > goal_pos["y"] and "down" in safe_moves:
+#         next_move = "down"
+#     else:
+#         next_move = random.choice(safe_moves)
+#     return next_move
+def get_naive_move(start_pos: Dict, goal_pos: Dict, safe_moves: List[str], game_state: Dict) -> Union[str, None]:
+    """
+    Get a move towards the goal while ensuring sufficient accessible area.
+    Returns the best move that maintains maximum accessible area.
+    """
+    if not safe_moves:
+        return None
+
+    min_area_threshold = len(game_state['you']['body']) * 2
+    max_accessible_area = -1
+    best_move = None
+
+    # Priority moves are those that move us closer to the goal
+    priority_moves = []
+    if start_pos["x"] < goal_pos["x"] and "right" in safe_moves:
+        priority_moves.append("right")
+    elif start_pos["x"] > goal_pos["x"] and "left" in safe_moves:
+        priority_moves.append("left")
+
+    if start_pos["y"] < goal_pos["y"] and "up" in safe_moves:
+        priority_moves.append("up")
+    elif start_pos["y"] > goal_pos["y"] and "down" in safe_moves:
+        priority_moves.append("down")
+
+    # First check priority moves
+    for move in priority_moves:
+        new_head = simulate_move(start_pos, move)
+        area = flood_fill(new_head, game_state)
+        print(f"Priority move {move} leads to area of {area}")
+        if area >= min_area_threshold and area > max_accessible_area:
+            max_accessible_area = area
+            best_move = move
+
+    # If no priority move gives sufficient area, check all safe moves
+    if best_move is None:
+        print("No priority moves meet area threshold, checking all safe moves")
+        for move in safe_moves:
+            new_head = simulate_move(start_pos, move)
+            area = flood_fill(new_head, game_state)
+            print(f"Safe move {move} leads to area of {area}")
+            if area > max_accessible_area:
+                max_accessible_area = area
+                best_move = move
+
+    return best_move
+
+
+def simulate_move(head, move):
+    if move == 'up':
+        return {'x': head['x'], 'y': head['y'] + 1}
+    elif move == 'down':
+        return {'x': head['x'], 'y': head['y'] - 1}
+    elif move == 'left':
+        return {'x': head['x'] - 1, 'y': head['y']}
+    elif move == 'right':
+        return {'x': head['x'] + 1, 'y': head['y']}
+
+
+def get_neighbors(head, board_width, board_height):
+    neighbors = []
+    directions = ['up', 'down', 'left', 'right']
+    for move in directions:
+        neighbor = simulate_move(head, move)
+        if 0 <= neighbor['x'] < board_width and 0 <= neighbor['y'] < board_height:
+            neighbors.append(neighbor)
+    return neighbors
+
+
+def flood_fill(start_position, game_state):
+    board_width = game_state['board']['width']
+    board_height = game_state['board']['height']
+    occupied_area = set()
+    for snake in game_state['board']['snakes']:
+        for seg in snake['body']:
+            occupied_area.add((seg['x'], seg['y']))
+
+    visited = set()
+    queue = deque()
+    queue.append(start_position)
+    visited.add((start_position['x'], start_position['y']))
+
+    while queue:
+        current = queue.popleft()
+        neighbors = get_neighbors(current, board_width, board_height)
+
+        for neighbor in neighbors:
+            pos = (neighbor['x'], neighbor['y'])
+            if pos not in visited and pos not in occupied_area:
+                visited.add(pos)
+                queue.append(neighbor)
+
+    accessible_area = len(visited)
+    return accessible_area
+
+
+def choose_move_with_max_accessible_area(safe_moves, my_head, game_state):
+    max_area = -1
+    best_move = None
+    for move in safe_moves:
+        new_head = simulate_move(my_head, move)
+        area = flood_fill(new_head, game_state)
+        if area > max_area:
+            max_area = area
+            best_move = move
+    return best_move if best_move else random.choice(safe_moves)
 
 
 # Start server when `python main.py` is run
 if __name__ == "__main__":
     from server import run_server
 
-    run_server({"info": info, "start": start, "move": move, "end": end})
+    run_server({"info": info, "start": start, "move": move, "end": end}, custom_port=8000)
